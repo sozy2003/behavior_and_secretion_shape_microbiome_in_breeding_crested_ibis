@@ -1,0 +1,63 @@
+---
+title: "Figure5B"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+far <- read.csv("16S_fun_network_notselect_one/cor_matrix.csv",row.names = 1)
+group<-read.table("D:/2023_crested_ibis_seasonal_variation/result/far_wsw.txt",row.names = 1)
+far<-far[!rowSums(far)==0,]
+far<-far[,!colSums(far)==0]
+colnames(far)
+far_1<-far[grep("^bac",names(far)),grep("^faprotax",names(far))]
+
+group1<-as.data.frame(group[row.names(far_1),])
+rownames(group1)<-rownames(far_1)
+
+group2<-as.data.frame(group[colnames(far_1),])
+rownames(group2)<-colnames(far_1)
+
+
+library(tidyr)
+group1<- separate(group1, "group[row.names(far_1), ]", c("group", "tissue"),sep = "_")#分列
+group2<- separate(group2,  "group[colnames(far_1), ]", c("group", "tissue"),sep = "_")#分列
+library(pheatmap)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+group1color<-c("#BDBDBDFF","#FFB6C1")
+group1tcolor<-c("#FFCC00","#CC99CC","#33CC33")
+names(group1color)<-c("b","n")
+names(group1tcolor)<-c("A","B","C")
+
+group2color<-c("#BDBDBDFF","#FFB6C1")
+group2tcolor<-c("#FFCC00","#CC99CC","#33CC33")
+names(group2color)<-c("b","n")
+names(group2tcolor)<-c("A","B","C")
+
+All_color<-list(group=group1color,tissue=group1tcolor,group=group2color,tissue=group2tcolor)
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+pheatmap(far_1,cluster_cols = F, cluster_rows = F,show_colnames=T,annotation_col=group2,
+         annotation_row = group1,annotation_colors = All_color,
+         filename = "heatmap_far6.pdf", width = 6, height = 5)
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

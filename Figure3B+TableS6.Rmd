@@ -1,0 +1,208 @@
+---
+title: "Figure3B+TableS6"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls()) 
+if(!require(reshape2))install.packages("reshape2")
+if(!require(ggalluvial))install.packages("ggalluvial")
+
+library("reshape2", quietly=T, warn.conflicts=F)
+library("ggalluvial")
+library("ggplot2")
+# Set ggplot2 ploting parameter
+main_theme = theme(panel.background=element_blank(),
+                   panel.grid=element_blank(),
+                   axis.line.x=element_line(size=.5, colour="black"),
+                   axis.line.y=element_line(size=.5, colour="black"),
+                   axis.ticks=element_line(color="black"),
+                   axis.text=element_text(color="black", size=7),
+                   legend.position="right",
+                   legend.background=element_blank(),
+                   legend.key=element_blank(),
+                   legend.text= element_text(size=7),
+                   text=element_text(family="sans", size=7))
+
+# Design of experiment
+design = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
+library(magrittr)
+library(dplyr)
+#  raw reads count of each OTU in each sample
+otu_table = read.delim("otutab.txt", row.names= 1,  header=T, sep="\t")
+
+# taxonomy for each OTU
+taxonomy = read.delim("taxonomy.txt", row.names= 1,header=F, sep="\t")
+colnames(taxonomy) = c("kingdom","phylum","class","order","family","genus","species")
+
+taxonomy <- taxonomy[-1,]
+
+tax_count = merge(taxonomy, otu_table, by="row.names")
+
+# 每一个属的相对丰度
+tax_count_sum = aggregate(tax_count[,-(1:8)], by=tax_count[7], FUN=sum) 
+
+rownames(tax_count_sum) = tax_count_sum$genus
+
+# generate numeric matrix
+tax_count_sum = tax_count_sum[,-1]
+tax_count_sum = tax_count_sum[!rownames(tax_count_sum)=="Unassigned",]#去除usignal
+# normalization to total 100
+per = t(t(tax_count_sum)/colSums(tax_count_sum,na=T)) * 100 
+
+
+# descending sort based on abundance 
+# mean_sort = per[(order(-rowSums(per))), ] # decrease sort
+mean_sort = per
+colSums(mean_sort)
+
+mean_sort=as.data.frame(mean_sort)
+mean_sort <- mean_sort[,rownames(design)]
+
+
+# plot for each time points
+mat=mean_sort
+mat_t = t(mat)
+mat_t2 = merge(design[c("group")], mat_t, by="row.names")
+
+
+mat_mean = aggregate(mat_t2[,-c(1,2)], by=mat_t2[2], FUN=mean) # mean,季节内的均值
+mat_mean_final = do.call(rbind, mat_mean)[-1,]
+
+geno = mat_mean$group
+colnames(mat_mean_final) = geno
+
+mat_mean_final = as.data.frame(mat_mean_final)
+mat_mean_final$genus = rownames(mat_mean_final)
+
+data_all = as.data.frame(melt(mat_mean_final, id.vars=c("genus")))
+
+
+head(data_all)
+#添加科
+genus_names<-mat_mean_final$genus
+taxonomy_family<-taxonomy[taxonomy$genus %in% genus_names,]
+
+#按照属名去重
+taxonomy_family<-taxonomy_family[!duplicated(taxonomy_family$genus),]
+taxonomy_final<-taxonomy_family[,colnames(taxonomy_family)%in%c("family","genus","order")]
+data_alltax<-merge(data_all,taxonomy_final,by="genus")
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+#挑选丰度前十的科
+
+tax_sec = aggregate(tax_count[,-(1:8)], by=tax_count[6], FUN=sum) 
+rownames(tax_sec) = tax_sec$family
+
+# generate numeric matrix
+tax_sec = tax_sec[,-1]
+tax_sec = tax_sec[!rownames(tax_sec)=="Unassigned",]#去除usignal
+per = t(t(tax_sec)/colSums(tax_sec,na=T)) * 100 
+# escending sort based on abundance 
+mean_sec = tax_sec[(order(-rowSums(per))), ] # decrease sort
+mean_sec=as.data.frame(mean_sec)
+
+#提取丰度前十
+other = colSums(mean_sec[11:dim(mean_sec)[1], ])
+mean_sec = mean_sec[1:(11-1), ]
+mean_sec$family<-row.names(mean_sec)
+
+#提取丰度前十的科
+data_topfamily<-data_alltax[data_alltax$family %in% mean_sec$family,]
+
+#画图
+#配色相关的包
+# install.packages("ggsci")
+library(ggsci)
+
+data_topfamily$value<-as.numeric(data_topfamily$value)
+
+
+data_topfamily$variable <- factor(data_topfamily$variable,levels = c("breeding","nonbreeding"))  
+
+p = ggplot(data_topfamily, aes(x=family, y=value, fill=order, group=genus)) +
+  geom_bar(stat="identity", position="stack", colour="black") +
+  labs(y="Relative Abundance (%)") +
+  scale_fill_npg() + # 调整配色
+  main_theme +
+  facet_wrap(~variable, scales="free_y") +
+  theme(axis.text.x = element_text(angle=340, hjust=0.1, vjust=0.2),
+        strip.text = element_text(size = 12), # 增加分面标签的字体大小
+        legend.title = element_text(size=12), # 增加图例标题（order）的字体大小
+        axis.title.x = element_text(size=12), # 增加x轴标题（family）的字体大小
+        axis.title.y = element_text(size=12)) # 增加y轴标题的字体大小
+p
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+#######统计检验
+taxonomy <-  read.delim("taxonomy.txt", row.names= 1,header=F, sep="\t")
+colnames(taxonomy) <-  c("kingdom","phylum","class","order","family","genus","species")
+
+taxonomy <- taxonomy[-1,]
+tax_count <-  merge(taxonomy, otu_table, by="row.names")
+
+tax_count_sum = aggregate(tax_count[,-(1:8)], by=tax_count[6], FUN=sum) 
+
+rownames(tax_count_sum) = tax_count_sum$family
+
+#rownames(tax_count) <- tax_count$Row.names
+tax_count_sum = tax_count_sum[,-1]
+tax_count_sum = tax_count_sum[!rownames(tax_count_sum)=="Unassigned",]
+
+per <-  t(t(tax_count_sum)/colSums(tax_count_sum,na=T)) 
+spp<-per
+
+
+#relative abundance top9+Low Abundance
+mean_sort <- per[(order(-rowSums(per))), ] #descending order
+
+other <- colSums(mean_sort[11:dim(mean_sort)[1], ])
+mean_sort <- mean_sort[1:(11-1), ]
+mean_sort <- rbind(mean_sort,other)
+rownames(mean_sort)[11] <- c("Low Abundance")
+
+spp<-mean_sort
+colSums(spp)
+spp_sub <- spp[,rownames(design)]
+mat_t <- t(spp_sub)
+mat_t4 <-  merge(design[c("group", "tissue_explanation","pedigreeID","sex")], mat_t, by="row.names")
+rownames(mat_t4) <- mat_t4$Row.names
+mat_t4 <- mat_t4[,-1]
+
+#install.packages("DirichletReg")
+library(DirichletReg)
+library("Formula")
+head(mat_t4)
+mat_dirichreg_r<-mat_t4
+mat_dirichreg_r$Y <- DR_data(mat_dirichreg_r[, c("Moraxellaceae","Micrococcaceae", "Sphingomonadaceae", "Dermacoccaceae","Comamonadaceae","Deinococcaceae","Corynebacteriaceae","Staphylococcaceae","Pseudomonadaceae","Rhodobacteraceae","Low Abundance")], base = 1)
+
+library("brms")
+full.Diri <- brm(Y ~ group+tissue_explanation+sex+tissue_explanation*group + (1|pedigreeID), data = mat_dirichreg_r, family = dirichlet(refcat ="Low Abundance"),seed = 000)
+
+
+z<-summary(full.Diri)
+
+result<-z$fixed
+
+head (result)
+
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

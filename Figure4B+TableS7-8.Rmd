@@ -1,0 +1,238 @@
+---
+title: "Figure4B+TableS7-8"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# 检测和安装依赖包
+package_list <- c("randomForest","ggplot2","pheatmap")
+# 判断R包加载是否成功来决定是否安装后再加载
+for(p in package_list){
+  if(!suppressWarnings(suppressMessages(require(p, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)))){
+    install.packages(p, repos=site)
+    suppressWarnings(suppressMessages(library(p, character.only = TRUE, quietly = TRUE, warn.conflicts = FALSE)))
+  }
+}
+# 假设从一百个样本中随机取70个，且无放回
+idx = sample(1:60, size = 60, replace = F)
+# 选择的样本标记为TRUE，未选择的为FALSE
+idx = 1:60 %in% idx
+metadata = read.table("metadata.txt",header = T, row.names = 1, sep="\t")
+# R4.0读取表不于默认为数据框
+metadata$group = as.factor(metadata$group)
+# 筛选"black"为训练集
+#metadata = subset(metadata, SampleColor  %in% c("black"))
+set.seed(60)#设定种子
+metadata=metadata[sample(nrow(metadata), 60),]
+# 物种分类文件，由usearch10 -sintax_summary生成，详见扩增子分析流程系列。但存在1对多时无法对应分类级颜色(如Unassigned可能属于多个门)，使用format2stamp.Rmd保留各级别名称
+library(randomForest)
+# "1Kingdom",界只有细菌、古菌类别太少；"7Species",扩增子中不太可信
+for(i in c("2Phylum","3Class","4Order","5Family","6Genus","8OTU0.1")){
+  # i="5Family"
+  set.seed(0)
+  table = read.table(paste0("tax_",i,".txt"),header = T, row.names = 1)
+  table = table[,rownames(metadata)]
+  rf = randomForest(t(table), metadata$group, importance=T, proximity=T, ntree = 1000)
+  print(i)
+  print(rf)
+}
+
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+metadata$group = as.factor(metadata$group)
+table =read.table("tax_8OTU0.1.txt",header = T, row.names = 1)
+# 筛选black样品作为训练集
+metadata_train = subset(metadata)
+summary(metadata_train)
+# 筛选OTU
+idx = rownames(metadata_train) %in% colnames(table)
+metadata_train = metadata_train[idx,]
+otu_sub = table[, rownames(metadata_train)] 
+dim(otu_sub)
+library(randomForest)
+for (i in 0:9){
+  set.seed(i)
+  rf = randomForest(t(otu_sub), metadata_train$group, importance=TRUE, proximity=TRUE, ntree = 1000)
+  print(i)
+  print(rf)
+}
+library(randomForest)
+set.seed(4)
+rf = randomForest(t(otu_sub), metadata_train$group, importance=TRUE, proximity=TRUE, ntree = 1000)
+print(rf)
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+# 读取实验设计、和物种分类文件
+#metadata = read.table("metadata.txt",header = T, row.names = 1,sep="\t")
+# R4.0读取表不于默认为数据框
+metadata$group = as.factor(metadata$group)
+# 读取科水平特征表
+table =read.table("tax_8OTU0.1.txt",header = T, row.names = 1)
+# 筛选black样品作为训练集
+metadata_train = subset(metadata)
+summary(metadata_train)
+# 筛选OTU
+idx = rownames(metadata_train) %in% colnames(table)
+metadata_train = metadata_train[idx,]
+otu_sub = table[, rownames(metadata_train)] 
+dim(otu_sub)
+
+
+## 选择最佳随机数(可选)
+
+library(randomForest)
+for (i in 0:9){
+  set.seed(i)
+  rf = randomForest(t(otu_sub), metadata_train$group, importance=TRUE, proximity=TRUE, ntree = 1000)
+  print(i)
+  print(rf)
+}
+
+
+## 随机森林分类
+
+# 在确定的分类层级和最佳随机数下建模
+library(randomForest)
+set.seed(4)
+rf = randomForest(t(otu_sub), metadata_train$group, importance=TRUE, proximity=TRUE, ntree = 1000)
+print(rf)
+
+## 交叉验证选择重要特征
+set.seed(1) # 随机数据保证结果可重复，必须
+# rfcv是随机森林交叉验证函数：Random Forest Cross Validation
+result = rfcv(t(otu_sub), metadata_train$group, cv.fold=5)
+# 查看错误率表，31时错误率最低，为最佳模型
+result$error.cv
+# 绘制验证结果 
+with(result, plot(n.var, error.cv, log="x", type="o", lwd=2))
+
+# 多次绘制
+## 建立数据框保存多次结果
+error.cv0 = data.frame(num = result$n.var, error.1 =  result$error.cv)
+## 指定随机数循环5次
+for (i in 1:(1+4)){
+  print(i)
+  set.seed(i)
+  result= rfcv(t(otu_sub), metadata_train$group, cv.fold=5) #  scale = "log", step = 0.9
+  error.cv0 = cbind(error.cv0, result$error.cv)
+}
+error.cv0 
+
+## 绘制交叉验证曲线
+# 提取x轴标签
+n.var = error.cv0$num
+# 提取y轴数据+标签
+error.cv = error.cv0[,2:6]
+colnames(error.cv) = paste('err',1:5,sep='.')
+# 添加均值
+err.mean = apply(error.cv,1,mean)
+# 合并新的数据库，x+error+mean
+allerr = data.frame(num=n.var,err.mean=err.mean,error.cv)
+# number of otus selected 人为在图中观察的结果，30几乎为最低，且数量可接受
+optimal = 4
+# 图1：机器学习结果交叉验证图，选择Top features
+# 图中 + 5条灰色拆线+1条黑色均值拆线+一条最优垂线+X轴对数变换
+write.table(allerr, file = "rfcv.txt", sep = "\t", quote = F, row.names = T, col.names = T)
+
+p = ggplot() + # 开始绘图
+  geom_line(aes(x = allerr$num, y = allerr$err.1), colour = 'grey') + # 5次验证灰线 
+  geom_line(aes(x = allerr$num, y = allerr$err.2), colour = 'grey') + 
+  geom_line(aes(x = allerr$num, y = allerr$err.3), colour = 'grey') + 
+  geom_line(aes(x = allerr$num, y = allerr$err.4), colour = 'grey') + 
+  geom_line(aes(x = allerr$num, y = allerr$err.5), colour = 'grey') + 
+  geom_line(aes(x = allerr$num, y = allerr$err.mean), colour = 'black') + # 均值黑线
+  geom_vline(xintercept = optimal, colour='black', lwd=0.36, linetype="dashed") + # 最优垂线
+  coord_trans(x = "log2") + # X轴对数变换和刻度
+  scale_x_continuous(breaks = c(1, 2, 5, 10, 20, 30, 50, 100, 200)) + # , max(allerr$num)
+  labs(title=paste('Training set (n = ', dim(t(otu_sub))[1],')', sep = ''), 
+       x='Number of families ', y='Cross-validation error rate') + 
+  annotate("text", x = optimal, y = max(allerr$err.mean), label=paste("optimal = ", optimal, sep="")) + theme_bw()
+p  
+#ggsave(paste("error",".pdf", sep=""), p, width =4, height =4 )
+
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+metadata = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
+
+otu <- read.table("otutab.txt", row.names= 1,  header=T, sep="\t")
+
+tax <- read.table("taxonomy.txt", row.names= 1,  header=T, sep="\t")
+
+improtance  <- read.table("importance.txt", row.names= 1,  header=T, sep="\t")
+
+improtance  <- improtance[c(1:4),]
+
+#筛选随机森林出来的asv
+
+otu_sec<-otu[row.names(otu) %in% row.names(improtance),]
+
+tax_sec <-tax[row.names(tax) %in% row.names(improtance),]
+
+metadata$group2<-paste(metadata$group, metadata$tissue_explanation, sep="_")
+
+#转置添加分组
+otu_sec_t <- as.data.frame(t(otu_sec))
+
+mat_t2 = merge(metadata[c("group2")], otu_sec_t, by="row.names")
+
+
+#按照分组求均值
+mat_t2 <-  aggregate(mat_t2[,-c(1,2)], by=mat_t2[2], FUN=mean)  
+
+row.names(mat_t2)<-mat_t2$group2
+mat_t2<-mat_t2[,-1]
+
+
+mat_fian<-as.data.frame(t(mat_t2))
+
+```
+
+```{r}
+# 添加分组 季节
+SamplingSeason<-as.data.frame(c("breeding","breeding", "breeding","nonbreeding","nonbreeding","nonbreeding"))
+colnames(SamplingSeason)<-"sampling_season"
+
+row.names(SamplingSeason)<-rownames(mat_t2)
+# 定义颜色映射
+#mat_t2$group <- c("#BDBDBDFF","#FFB6C1")
+
+
+
+#添加asv 的分类分组
+family<-as.data.frame(tax_sec[,colnames(tax_sec)=="Family"])
+
+colnames(family)<-"family"
+row.names(family)<-rownames(mat_fian)
+
+library(pheatmap)
+annotation_colors <- list(
+  sampling_season = c("nonbreeding" = "#FFB6C1","breeding" = "#BDBDBDFF")
+)
+
+
+pheatmap(mat_fian, scale = "row", color = colorRampPalette(c("#2fa1dd", "white", "#f87669"))(100),
+         cluster_cols = FALSE, cluster_rows = T,annotation_col=SamplingSeason,annotation_row = family,annotation_colors = annotation_colors,
+         filename = "heatmap_groupw21.pdf", width = 8, height = 6, border_color = NA)
+
+
+```

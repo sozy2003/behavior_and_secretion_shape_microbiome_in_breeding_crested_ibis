@@ -1,0 +1,169 @@
+---
+title: "Figure4A"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# clean environment variables
+rm(list=ls()) 
+# options(expressions = 5e5)
+
+library(nlme)
+library(tidyverse)
+library(compositions)
+source("ancom.R")
+
+
+library(readr)
+library(tidyverse)
+#读入otu表#行名为otu名，纵向为样本名
+otu_data = read.delim("otutab.txt", row.names= 1,  header=T, sep="\t")
+
+#otu水平过于慢，使用科水平来做
+
+taxonomy = read.delim("taxonomy.txt", row.names= 1,header=F, sep="\t")
+colnames(taxonomy) = c("kingdom","phylum","class","order","family","genus","species")
+
+taxonomy <- taxonomy[-1,]
+
+tax_count = merge(taxonomy, otu_data, by="row.names")
+
+# group by family
+tax_count_sum = aggregate(tax_count[,-(1:8)], by=tax_count[6], FUN=sum) # mean
+
+rownames(tax_count_sum) = tax_count_sum$family
+tax_count_sum = tax_count_sum[,-1]
+tax_count_sum = tax_count_sum[-119,]#去除Unassigned
+
+otu_data=tax_count_sum
+
+
+meta_data = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
+meta_data$'Sample.ID'<-rownames(meta_data)
+
+# Step 1: Data preprocessing
+
+feature_table = otu_data
+sample_var = "Sample.ID" 
+group_var = "group"
+out_cut = 0.05 
+zero_cut = 0.90
+lib_cut = 1000
+neg_lb = TRUE
+
+
+prepro = feature_table_pre_process(feature_table, meta_data, sample_var, group_var, 
+                                   out_cut, zero_cut, lib_cut, neg_lb)
+feature_table = prepro$feature_table # Preprocessed feature table
+meta_data = prepro$meta_data # Preprocessed metadata
+struc_zero = prepro$structure_zeros # Structural zero info  
+
+
+# Step 2: ANCOM
+
+main_var = "group"
+p_adj_method = "BH" 
+alpha = 0.05
+adj_formula = NULL 
+rand_formula = "~ 1 | pedigreeID"
+# rand_formula = NULL
+lme_control = list(maxIter = 100, msMaxIter = 100, opt = "optim")
+
+res = ANCOM(feature_table, meta_data, struc_zero, main_var, p_adj_method, 
+            alpha, adj_formula, rand_formula, lme_control)
+
+
+res$fig
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+# Step 3: Volcano Plot
+
+# Number of taxa except structural zeros
+n_taxa = ifelse(is.null(struc_zero), nrow(feature_table), sum(apply(struc_zero, 1, sum) == 0))
+
+# Cutoff values for declaring differentially abundant taxa
+cut_off = c(0.9 * (n_taxa - 1), 0.8 * (n_taxa - 1), 0.7 * (n_taxa - 1), 0.6 * (n_taxa - 1))
+names(cut_off) = c("detected_0.9", "detected_0.8", "detected_0.7", "detected_0.6")
+
+# Annotation data
+dat_ann = data.frame(x = min(res$fig$data$x), y = cut_off["detected_0.7"], label = "W[0.7]")
+
+fig = res$fig + 
+  geom_hline(yintercept = cut_off["detected_0.7"], linetype = "dashed") + 
+  geom_text(data = dat_ann, aes(x = x, y = y, label = label), 
+            size = 4, vjust = -0.5, hjust = 0, color = "orange", parse = TRUE)
+fig   
+
+
+########散点图
+#添加分组
+data<-as.data.frame(t(tax_count_sum))
+#使用merge合并
+data<-merge(meta_data[,c("group","pedigreeID","tissue_explanation")],data,by="row.names")
+#按照部位求均值
+mat_mean <-  aggregate(data[,-c(1:4)], by=data[2], FUN=mean)
+
+row.names(mat_mean)<-mat_mean$group
+mat_mean <- mat_mean[,-1]
+
+mat_mean_final<-as.data.frame(t(mat_mean))
+
+# 假设你的数据框是df，其中第一列是df[,1]，第二列是df[,2]
+mat_mean_final$new_column <- ifelse(mat_mean_final[,2] > mat_mean_final[,1], "nonbreeding","breeding")
+
+names(mat_mean_final)[names(mat_mean_final) == "new_column"] <- "group"
+
+data1<-res[["fig"]][["data"]]
+
+
+data_final<-merge(data1,mat_mean_final,by="row.names")
+
+main_theme <-  theme(panel.background=element_blank(),
+                     panel.grid=element_blank(),
+                     axis.line.x=element_line(size=.5, colour="black"),
+                     axis.line.y=element_line(size=.5, colour="black"),
+                     axis.ticks=element_line(color="black"),
+                     axis.text=element_text(color="black", size=12),
+                     legend.position="right",
+                     legend.background=element_blank(),
+                     legend.key=element_blank(),
+                     legend.text= element_text(size=12),
+                     text=element_text(family="sans", size=12))
+
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+data_final$group <- factor(data_final$group, levels = c("nonbreeding", "breeding"), ordered = TRUE)
+
+p <- ggplot(data = data_final) + main_theme +
+  geom_point(mapping = aes(x = x, y = y, size = 1, color = group, shape = zero_ind)) +
+  geom_hline(yintercept = cut_off["detected_0.7"], linetype = "dashed") +
+  geom_text(data = dat_ann, aes(x = x, y = y, label = label), 
+            size = 4, vjust = -0.5, hjust = 0, color = "orange", parse = TRUE)
+
+# 设置颜色和图例名称
+p <- p + scale_color_manual(name = "sampling season", 
+                            values = c("nonbreeding" ="#FFB6C1", "breeding" = "#BDBDBDFF"))
+
+# p <- p + theme(panel.background = element_rect(fill = "white"))
+p
+
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

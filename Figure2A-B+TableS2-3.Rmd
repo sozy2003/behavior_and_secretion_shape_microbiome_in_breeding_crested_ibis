@@ -1,0 +1,242 @@
+---
+title: "Figure2A-B+TableS2-3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# clean environment variables
+rm(list=ls()) 
+# load(file = "Figure2B.RData")
+# load related packages
+if(!require(ggplot2))install.packages("ggplot2")
+library("ggplot2") 
+library("lme4")
+#####shannon
+main_theme <- theme(
+  panel.background = element_blank(),
+  panel.grid = element_blank(),
+  axis.line.x = element_line(size = 1, colour = "black"),  # 稍微增大线条大小
+  axis.line.y = element_line(size = 1, colour = "black"),
+  axis.ticks = element_line(color = "black"),
+  axis.text = element_text(color = "black", size = 15, family = "sans"),  # 增大字体大小并统一字体
+  axis.title = element_text(color = "black", size = 15, family = "sans"),  # 增加坐标轴标题字体大小
+  legend.position = "right",
+  legend.background = element_blank(),
+  legend.key = element_blank(),
+  legend.text = element_text(size = 15, family = "sans"),  # 统一图例文字字体大小和格式
+  legend.title = element_text(size = 15, family = "sans"),  # 统一图例标题字体大小和格式
+  text = element_text(family = "sans", size = 15)) # 统一全局字体大小和格式
+  
+
+#   Design of experiment
+design <-  read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
+
+#alpha diversity
+alphadiv <-  read.table("vegan.txt", header=T, row.names= 1, sep="\t")
+
+
+#reorder the rows
+alphadiv <-  alphadiv[rownames(design), ]
+
+#conbine the two data frames
+alpha = cbind(alphadiv, design)
+alpha$group <- factor(alpha$group,levels = c("nonbreeding","breeding"))  #gg画图可以改x轴的坐标
+
+
+tissue_level <- c("neck skin","neck feather","skin of preen gland")
+alpha$tissue_explanation <- factor(alpha$tissue_explanation, level=tissue_level)
+library(ggsignif)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+p <- ggplot(alpha, aes(x = tissue_explanation, y = shannon, fill = group)) +
+  geom_point(aes(x = tissue_explanation, y = shannon), color = "grey", alpha = 0.5) +  # 设置点的颜色为灰色
+  labs(x = "", y = "Shannon", fill = "sampling season") +
+  geom_jitter(width = 0.1, height = 0.1, color = "grey") +  # 设置抖动点的颜色为灰色
+  geom_boxplot(alpha = 1, outlier.size = 0, size = 0.7, width = 0.5) +
+  scale_fill_manual() +
+  main_theme 
+p=p+scale_fill_manual(values=c("#FFB6C1","#BDBDBDFF"))
+# +geom_signif(comparisons=list(c("Spring","Summer", "Autumn","Winter")), map_signif_level=TRUE,color="black")
+p.shannon.point=p
+p.shannon.point
+
+vegan <- alphadiv
+rownames(design)==rownames(vegan)
+# generate data frame for fitting
+dat <- data.frame(vegan, group=design$group,tissue=design$tissue_explanation, pedigreeID=design$pedigreeID,sex=design$sex)
+library(performance)
+library(car)
+mr<-lmer(shannon~group+tissue+sex+tissue*group+(1|pedigreeID), data =dat)
+library("partR2")
+#partR2(mr,partvars=c("group","tissue","sex","group*tissue"),R2_type = "marginal",nboot=100,CI=0.95)
+anova(mr)
+car::Anova(mr)
+check_normality(mr) # pass  #残差的正太
+check_homogeneity(mr)# not pass    #方差齐
+anova(mr)
+car::Anova(mr)
+r2(mr)
+
+#######都是绿色不用跑下面的代码
+p1<-powerTransform(mr)
+m<- lmer(bcPower(shannon, p1$roundlam)~sex+(1|pedigreeID), dat, REML=T)
+car::Anova(m)
+r2(m)
+
+#######多重比较
+#if(!require("multcompView"))install.packages("multcompView")
+library("multcompView")
+library("emmeans")
+emmeans(mr,pairwise~tissue | group)
+emmeans(mr,pairwise~group | tissue)
+library("multcomp")
+#if(!require("multcompView"))install.packages("multcompView")
+#library("multcompView")
+
+#####neck skin
+dat2<-dat[dat$tissue=="neck skin",]
+library(performance)
+library(car)
+mr<-lmer(shannon~group+sex+(1|pedigreeID), data =dat2)
+
+library("partR2")
+#partR2(mr,partvars=c("group","tissue","sex","group*tissue"),R2_type = "marginal",nboot=100,CI=0.95)
+
+check_normality(mr) # pass  #残差的正太
+check_homogeneity(mr)# not pass    #方差齐
+anova(mr)
+car::Anova(mr)
+r2(mr)
+
+########neck feather
+dat2<-dat[dat$tissue=="neck feather",]
+library(performance)
+library(car)
+mr<-lmer(shannon~group+sex+(1|pedigreeID), data =dat2)
+library("partR2")
+check_normality(mr) # pass  #残差的正太
+check_homogeneity(mr)# not pass    #方差齐
+anova(mr)
+car::Anova(mr)
+r2(mr)
+
+#######skin of preen gland
+dat2<-dat[dat$tissue=="skin of preen gland",]
+library(performance)
+library(car)
+mr<-lmer(shannon~group+sex+(1|pedigreeID), data =dat2)
+
+library("partR2")
+check_normality(mr) # pass  #残差的正太
+check_homogeneity(mr)# not pass    #方差齐
+anova(mr)
+car::Anova(mr)
+r2(mr)
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+######################richness
+# clean environment var//
+rm(list=ls()) 
+# load(file = "Figure2B.RData")
+if(!require(ggplot2))install.packages("ggplot2")
+library("ggplot2") 
+main_theme <- theme(
+  panel.background = element_blank(),
+  panel.grid = element_blank(),
+  axis.line.x = element_line(size = 1, colour = "black"),  # 稍微增大线条大小
+  axis.line.y = element_line(size = 1, colour = "black"),
+  axis.ticks = element_line(color = "black"),
+  axis.text = element_text(color = "black", size = 15, family = "sans"),  # 增大字体大小并统一字体
+  axis.title = element_text(color = "black", size = 15, family = "sans"),  # 增加坐标轴标题字体大小
+  legend.position = "right",
+  legend.background = element_blank(),
+  legend.key = element_blank(),
+  legend.text = element_text(size = 15, family = "sans"),  # 统一图例文字字体大小和格式
+  legend.title = element_text(size = 15, family = "sans"),  # 统一图例标题字体大小和格式
+  text = element_text(family = "sans", size = 15)) # 统一全局字体大小和格式
+
+#   Design of experiment
+design <-  read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
+
+#alpha diversity
+alphadiv <-  read.table("vegan.txt", header=T, row.names= 1, sep="\t")
+
+
+#reorder the rows
+alphadiv <-  alphadiv[rownames(design), ]
+
+#conbine the two data frames
+alpha = cbind(alphadiv, design)
+alpha$group <- factor(alpha$group,levels = c("nonbreeding","breeding"))
+tissue_level <- c("neck skin","neck feather","skin of preen gland")
+alpha$tissue_explanation <- factor(alpha$tissue_explanation, level=tissue_level)#gg画图可以改x轴的坐标
+
+library(ggsignif)
+p = ggplot(alpha, aes(x = tissue_explanation, y = richness, fill = group)) +
+
+  geom_point(aes(x = tissue_explanation, y = richness), alpha = 0.5, color = "grey") +
+  labs(x = "", y = "Richness", fill = "sampling season") +
+  geom_jitter(width = 0.1, height = 0.1, color = "grey") + 
+  geom_boxplot(alpha = 1, outlier.size = 0, size = 0.7, width = 0.5) +
+  scale_fill_manual() +
+  main_theme
+p=p+scale_fill_manual(values=c("#FFB6C1","#BDBDBDFF"))
+
+p
+library("lme4")
+library(performance)
+mr<-glmer(richness~group+tissue_explanation+sex+tissue_explanation*group+(1|pedigreeID), data =alpha, family = poisson(link = "log"))
+anova(mr)
+car::Anova(mr)
+r2(mr)
+
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+#######多重比较
+library(multcomp)
+#if(!require("multcompView"))install.packages("multcompView")
+library("multcompView")
+library("emmeans")
+emmeans(mr,pairwise~tissue_explanation | group)
+emmeans(mr,pairwise~group | tissue_explanation)
+#######neck skin
+alpha2<-alpha[alpha$tissue_explanation=="neck skin",]
+mr<-glmer(richness~group+sex+(1|pedigreeID), data =alpha2, family = poisson(link = "log"))
+anova(mr)#
+car::Anova(mr)
+r2(mr)
+
+#############neck feather 
+alpha2<-alpha[alpha$tissue_explanation=="neck feather",]
+mr<-glmer(richness~group+sex+(1|pedigreeID), data =alpha2, family = poisson(link = "log"))
+anova(mr)#
+car::Anova(mr)
+r2(mr)
+
+#####skin of preen gland
+alpha2<-alpha[alpha$tissue_explanation=="skin of preen gland",]
+mr<-glmer(richness~group+sex+(1|pedigreeID), data =alpha2, family = poisson(link = "log"))
+anova(mr)#
+car::Anova(mr)
+r2(mr)
+
+```

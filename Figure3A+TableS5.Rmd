@@ -1,0 +1,272 @@
+---
+title: "Figure3A+TableS5"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls()) 
+library("DirichletReg")
+#install and load the packages
+if(!require(reshape2))install.packages("reshape2")
+if(!require(ggalluvial))install.packages("ggalluvial")
+
+library("reshape2", quietly=T, warn.conflicts=F)
+library("ggalluvial")
+
+# Set ggplot2 ploting parameter
+main_theme <-  theme(panel.background=element_blank(),
+                     panel.grid=element_blank(),
+                     axis.line.x=element_line(size=.5, colour="black"),
+                     axis.line.y=element_line(size=.5, colour="black"),
+                     axis.ticks=element_line(color="black"),
+                     axis.text=element_text(color="black", size=7),
+                     legend.position="right",
+                     legend.background=element_blank(),
+                     legend.key=element_blank(),
+                     legend.text= element_text(size=7),
+                     text=element_text(family="sans", size=7))
+
+# Design of experiment
+design = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
+
+#aggregate a column for  stages
+
+design$phase <- design$group
+
+design$group[design$breeding] <- "p1"  #stage one in Figure 1
+design$group[design$nonbreeding] <- "p2"
+
+# raw reads count of each ASV in each sample
+otu_table <-  read.delim("otutab.txt", row.names= 1,  header=T, sep="\t")
+
+#  taxonomy for each OTU
+taxonomy <-  read.delim("taxonomy.txt", row.names= 1,header=F, sep="\t")
+colnames(taxonomy) <-  c("kingdom","phylum","class","order","family","genus","species")
+
+taxonomy <- taxonomy[-1,]
+
+idx <-  taxonomy$phylum
+taxonomy$full <- as.character(taxonomy$phylum) 
+
+taxonomy[idx,]$full <- as.character(taxonomy[idx,]$class)
+# add annotation for otu table
+tax_count <-  merge(taxonomy, otu_table, by="row.names")
+
+# group by column "full"
+tax_count_sum <-  aggregate(tax_count[,-(1:9)], by=tax_count[9], FUN=sum) # mean
+# rownames
+rownames(tax_count_sum) <-  tax_count_sum$full
+# generate numeric matrix 
+tax_count_sum <-  tax_count_sum[,-1]
+tax_count_sum <-tax_count_sum[-17,]
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+# normalization to total 100 
+per <-  t(t(tax_count_sum)/colSums(tax_count_sum,na=T)) * 100 
+
+
+# descending sort based on abundance 
+mean_sort <- per[(order(-rowSums(per))), ] # decrease sort
+colSums(mean_sort)
+# mean_sort <-mean_sort[-9,]#去除un的，视情况而定
+# top10,including Low abundance
+mean_sort<-as.data.frame(mean_sort)
+other <- colSums(mean_sort[11:dim(mean_sort)[1], ])
+mean_sort <- mean_sort[1:(11-1), ]
+mean_sort <- rbind(mean_sort,other)
+rownames(mean_sort)[11] <- c("Low Abundance")
+
+# top 10
+topN<-rownames(mean_sort)
+
+mean_sort <- mean_sort[,rownames(design)]
+
+# plot for samples
+mean_sort$phylumpro <- rownames(mean_sort)
+
+
+data_all <- as.data.frame(melt(mean_sort, id.vars=c("phylumpro")))
+# data_all<-merge(data_all,design["tissue_explanation"],by.x="variable",by.y="row.name")
+
+data_all <- merge(data_all, design[c("tissue_explanation","group","sex")], by.x="variable", by.y = "row.names")
+
+data_all <- as.data.frame(melt(mean_sort, id.vars=c("phylumpro")))
+
+colnames(design)
+data_all <- merge(data_all, design[c("group","tissue_explanation")], by.x="variable", by.y = "row.names")
+data_all$group <- factor(data_all$group,levels = c("breeding", "nonbreeding"))#改换标题顺序
+head(data_all)
+p <- ggplot(data_all, aes(x=variable, y = value, fill = phylumpro )) + 
+  geom_bar(stat = "identity",position="fill", width=1)+ 
+  scale_y_continuous(labels = scales::percent) + 
+  facet_grid( ~ group+tissue_explanation, scales = "free_x", switch = "x") +  main_theme +
+  theme(axis.ticks.x = element_blank(), legend.position="top", axis.text.x = element_blank(), strip.background = element_blank())+
+  xlab("group")+ylab("Percentage (%)")           
+
+p
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+#######统计检验
+library("brms")
+taxonomy <-  read.delim("taxonomy.txt", row.names= 1,header=F, sep="\t")
+colnames(taxonomy) <-  c("kingdom","phylum","class","order","family","genus","species")
+
+taxonomy <- taxonomy[-1,]
+tax_count <-  merge(taxonomy, otu_table, by="row.names")
+
+tax_count_sum = aggregate(tax_count[,-(1:8)], by=tax_count[3], FUN=sum) 
+
+rownames(tax_count_sum) = tax_count_sum$phylum
+
+#rownames(tax_count) <- tax_count$Row.names
+tax_count_sum = tax_count_sum[,-1]
+tax_count_sum = tax_count_sum[!rownames(tax_count_sum)=="Unassigned",]
+per <-  t(t(tax_count_sum)/colSums(tax_count_sum,na=T)) 
+spp<-per
+
+
+#relative abundance top9+Low Abundance
+mean_sort <- per[(order(-rowSums(per))), ] #descending order
+
+other <- colSums(mean_sort[11:dim(mean_sort)[1], ])
+mean_sort <- mean_sort[1:(11-1), ]
+mean_sort <- rbind(mean_sort,other)
+rownames(mean_sort)[11] <- c("Low Abundance")
+
+
+
+
+spp<-mean_sort
+colSums(spp)
+spp_sub <- spp[,rownames(design)]
+mat_t <- t(spp_sub)
+mat_t4 <-  merge(design[c("group", "tissue_explanation","pedigreeID","sex")], mat_t, by="row.names")
+rownames(mat_t4) <- mat_t4$Row.names
+mat_t4 <- mat_t4[,-1]
+
+install.packages("dirichletreg")
+library(dirichletreg)
+
+head(mat_t4)
+mat_dirichreg_r<-mat_t4
+mat_dirichreg_r$Y <- DR_data(mat_dirichreg_r[, c("Proteobacteria","Actinobacteria", "Firmicutes", "Bacteroidetes","Deinococcus-Thermus","Fusobacteria","Acidobacteria","Gemmatimonadetes","Tenericutes","Campilobacterota","Low Abundance")], base = 1)
+
+full.Diri <- brm(Y ~ group+tissue_explanation+sex+tissue_explanation*group + (1|pedigreeID), data = mat_dirichreg_r, family = dirichlet(refcat ="Low Abundance"),seed = 000)
+
+######两两比较
+library("MASS")
+mod_final=glmmPQL(Proteobacteria~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+library("MASS")
+mod_final=glmmPQL(Actinobacteria~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+
+library("MASS")
+mod_final=glmmPQL(Firmicutes~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+
+
+mod_final=glmmPQL(Bacteroidetes~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+colnames(mat_t4)[9] <- "Deinococcus"
+mod_final=glmmPQL(Deinococcus~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+#library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+
+mod_final=glmmPQL(Fusobacteria~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+#library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+
+mod_final=glmmPQL(Acidobacteria~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+#library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+
+mod_final=glmmPQL(Gemmatimonadetes~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+#library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+
+mod_final=glmmPQL(Tenericutes~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+#library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+mod_final=glmmPQL(Campilobacterota~group+tissue_explanation+sex+tissue_explanation*group, random=~1|pedigreeID,data=mat_t4,family=quasipoisson(link = "log")) 
+#library(MuMIn)
+r.squaredGLMM(mod_final)
+car::Anova(mod_final)
+#pairs(emmeans(mod_final,~group))
+#pairs(emmeans(mod_final,~tissue_explanation))
+pairs(emmeans(mod_final,~group*tissue_explanation))
+
+z<-summary(full.Diri)
+result<-z$fixed
+head (result)
+result
+
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

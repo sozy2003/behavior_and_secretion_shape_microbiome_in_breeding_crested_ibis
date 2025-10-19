@@ -1,0 +1,134 @@
+---
+title: "Figure2D+TableS4"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls()) 
+design <- read.table("metadata.txt",row.names= 1,  header=T, sep="\t")  
+all_bDAT <- read.delim("otutab_rare.txt", row.names= 1,  header=T, sep="\t")#读入抽平的表就不用抽平了
+bDAT <- all_bDAT[, rownames(design) ]
+design$sampling_season <- design$group
+design$body_parts <- design$tissue_explanation
+bTAX <- read.table( "taxonomy.txt" , row.names=1, sep="\t", header=T)
+bTAX <- bTAX[rownames(bDAT),]
+## add OTU_ID to taxonomy file
+bTAX$OTU_ID <- rownames(bTAX)
+### data
+bDAT_field <- bDAT[, rownames(design) ]
+library(vegan)
+bDAT_field_rare<-bDAT_field
+bDAT_field_rare <- bDAT_field_rare[rowSums(bDAT_field_rare) >= 1,]   
+# dim(bDAT_field_rare)
+
+## Phyloseq object
+library(phyloseq)
+library(ggplot2)
+library(plyr)
+
+field_phy <- phyloseq(sample_data(design), 
+                      otu_table(bDAT_field_rare, taxa_are_rows=T), 
+                      tax_table(as.matrix(bTAX[rownames(bDAT_field_rare),])) )#系统发育
+field_CAP_bray <- ordinate(field_phy, method="CAP", ~sampling_season+sex+body_parts+sampling_season*body_parts, distance="bray")#执行最小二成法
+
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+variability_table <- function(cca){
+  
+  chi <- c(cca$tot.chi, cca$CCA$tot.chi, cca$CA$tot.chi)
+  variability_table <- cbind(chi, chi / chi[1])
+  colnames(variability_table) <- c("inertia", "proportion")
+  rownames(variability_table) <- c("total", "constrained", "unconstrained") 
+  return(variability_table)
+  
+}
+
+field_CAP_bray_var_tbl <- variability_table(field_CAP_bray)
+set.seed(000)
+library(vegan)
+#install.packages("vegan")
+field_CAP_bray_anova <- anova.cca(field_CAP_bray, permutations=999)####anova统计检验
+library(pander)
+# pander(field_CAP_bray_anova[1:4])
+
+# plot
+
+field_phy@sam_data[["sampling_season"]] <- factor(field_phy@sam_data[["sampling_season"]],levels = c("nonbreeding","breeding"))
+field_phy@sam_data[["body_parts"]] <- factor(field_phy@sam_data[["body_parts"]],levels = c("neck skin","neck feather","skin of preen gland"))  
+title <- paste("[~sampling_season+sex+body_parts+sampling_season*body_parts: ",
+               format(field_CAP_bray_var_tbl["constrained", "proportion"] * 100, digits=2, nsmall=1),
+               "% of variance, P = ",
+               format(field_CAP_bray_anova[1, 4], digits=2),
+               "]", sep = "")
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+library(phyloseq)
+#install.packages("phyloseq")
+# install.packages("ggplot2")
+library(ggplot2)
+
+p2 <- plot_ordination(field_phy, field_CAP_bray, color = "sampling_season", shape = "body_part")
+p2 <- p2 + geom_point(size = 3)
+p2 <- p2 + scale_color_manual(values = c("#FFB6C1", "#BDBDBDFF"))
+p2 <- p2 + ggtitle(title)
+p2 <- p2 + theme(plot.title = element_text(size = 9, face = "bold"))
+p2 <- p2 + stat_ellipse(aes(group = sampling_season, color = sampling_season), 
+                        geom = "path", 
+                        alpha = 0.5, 
+                        linetype = "solid", 
+                        size = 1)
+p2 <- p2 + theme(
+  legend.text = element_text(size = 14, face = "bold", color = "black", family = "sans"),  
+  legend.title = element_text(size = 16, face = "bold", color = "black", family = "sans")  
+)
+# 设置图例顺序
+p2 <- p2 + guides(color = guide_legend(order = 1), shape = guide_legend(order = 2))
+# 显示图形
+p2 <- plot_ordination(field_phy, field_CAP_bray, color ="sampling_season", shape="body_parts")
+p2 <- p2 + geom_point(size=3,alpha=0.7)
+p2 <- p2 + scale_color_manual(values=c("#FFB6C1","#BDBDBDFF"))
+p2 <- p2 + ggtitle(title)
+p2 <- p2 + theme(plot.title = element_text(size=9, face = "bold"))
+p2 <- p2 + stat_ellipse(aes(group = sampling_season, color = sampling_season), 
+                        geom = "path", 
+                        alpha = 0.5, 
+                        linetype = "solid", 
+                        size = 1)
+p2 <- p2 + theme(
+  legend.text = element_text(size = 14, face = "bold", color = "black", family = "sans"),  # 图例文字大小和样式
+  legend.title = element_text(size = 16, face = "bold", color = "black", family = "sans"),  # 图例标题大小和样式
+  panel.background = element_blank(),  # 去除背景色
+  panel.grid.major = element_blank(),  # 去除主要网格线
+  panel.grid.minor = element_blank(),  # 去除次要网格线
+  axis.line = element_line(color = "black"),  # 添加轴线
+  axis.text = element_text(color = "black"),  # 设置轴文本颜色
+  axis.ticks = element_line(color = "black")  # 设置轴刻度线颜色
+)
+p2
+
+#统计分析
+set.seed(000)##随机种子
+bDAT_field_rare_dist <- vegdist(t(bDAT_field_rare), method="bray")
+bDAT_field_rare_dist_paov <- adonis2(bDAT_field_rare_dist ~group+sex+tissue_explanation+group*tissue_explanation, data=design, permutations=999)
+bDAT_field_rare_dist_paov
+
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

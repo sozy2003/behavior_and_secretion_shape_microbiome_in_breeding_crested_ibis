@@ -1,0 +1,150 @@
+---
+title: "Figure5A+TableS9"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls()) 
+faprtax <- read.table("KK_otu_tax_faprtax.txt", row.names= 1,  header=T, sep="\t")
+faprtax <- faprtax[,-1]
+faprtax=faprtax[which(rowSums(faprtax) > 0),]
+metadata = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
+library(magrittr)
+library(dplyr)
+per <-  t(t(faprtax)/colSums(faprtax,na=T))*100
+colSums(per)
+mean_sort = per[(order(-rowSums(per))), ] # decrease sort
+colSums(mean_sort)
+mean_sort <- mean_sort[,rownames(metadata)]
+other = colSums(mean_sort[11:dim(mean_sort)[1], ])
+mean_sort = mean_sort[1:(11-1), ]
+mean_sort = rbind(mean_sort,other)
+rownames(mean_sort)[11] = c("Low Abundance")
+#按照季节求均值
+mat_t = t(mean_sort)
+mat_t2 = merge(metadata[c("group")], mat_t, by="row.names")
+
+mat_t2 = mat_t2[,-1]
+mat_mean = aggregate(mat_t2[,-1], by=mat_t2[1], FUN=mean) 
+
+mat_mean<-t(mat_mean)
+colnames(mat_mean)<-mat_mean[1,]
+mat_mean<-mat_mean[-1,]
+str(mat_mean)
+
+library(dplyr)
+mat_mean<-as.data.frame(mat_mean)
+mat_mean %>% mutate(across(where(is.character), as.numeric))  -> mat_mean
+colSums(mat_mean)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+#plot 
+library(reshape2)
+mat_mean_top<- mat_mean[-11,]
+mat_mean_top$faprotax <- rownames(mat_mean_top)
+
+mat_mean_top <- as.data.frame(melt(mat_mean_top , id.vars=c("faprotax")))
+
+colnames(mat_mean_top)<-c("faprotax","group","value")
+
+library(ggplot2)
+library(ggsci)
+str(mat_mean_top)
+
+
+#调整排序和着色
+mat_mean_top$group <- factor(mat_mean_top$group,levels = c("breeding","nonbreeding"))
+
+row.names(mat_mean)
+mat_mean_top$faprotax <- factor(mat_mean_top$faprotax,levels = c("chemoheterotrophy","aerobic_chemoheterotrophy","fermentation","nitrate_reduction","aromatic_compound_degradation","methanol_oxidation","methylotrophy","animal_parasites_or_symbionts","nitrate_respiration","nitrogen_respiration"))
+
+p1 <- ggplot(mat_mean_top, aes(x = faprotax, y = value, fill = group)) + 
+  geom_bar(stat = "identity", position = position_dodge(), alpha = 0.8) + 
+  coord_flip() +
+  theme_classic() +
+  scale_fill_manual(values = c("#FFB6C1", "#BDBDBDFF"), name = "Sampling Season") +
+  labs(x = "", y = "Relative Abundance (%)") +
+  theme(
+    legend.title = element_text(size = 13, color = "black"),  # 调整图例标题字体大小和颜色
+    legend.text = element_text(size = 13, color = "black"),   # 调整图例标签字体大小和颜色
+    axis.text.x = element_text(size = 13, color = "black"),   # 调整X轴标签字体大小和颜色
+    axis.title.x = element_text(size = 13, color = "black"),  # 调整X轴标题字体大小和颜色
+    axis.text.y = element_text(size = 13, color = "black"),   # 调整Y轴标签字体大小和颜色
+    axis.title.y = element_text(size = 13, color = "black")   # 调整Y轴标题字体大小和颜色
+  )
+
+p1
+
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+########统计分析
+library(brms)
+library(DirichletReg)
+
+per <-  t(t(faprtax)/colSums(faprtax,na=T))
+
+colSums(per)
+mean_sort = per[(order(-rowSums(per))), ] # decrease sort
+colSums(mean_sort)
+mean_sort <- mean_sort[,rownames(metadata)]
+
+#丰度前十 #十一位之后命名位
+other = colSums(mean_sort[11:dim(mean_sort)[1], ])
+mean_sort = mean_sort[1:(11-1), ]
+mean_sort = rbind(mean_sort,other)
+rownames(mean_sort)[11] = c("Low Abundance")
+#按照季节求均值
+mat_t = t(mean_sort)
+mat_t2 = merge(metadata[c("group","pedigreeID","sex","tissue_explanation")], mat_t, by="row.names")
+
+mat_t2 = mat_t2[,-1]
+
+
+
+
+mat_dirichreg_r<-mat_t2
+mat_dirichreg_r$Y <- DR_data(mat_dirichreg_r[, c("chemoheterotrophy","aerobic_chemoheterotrophy","fermentation","nitrate_reduction","aromatic_compound_degradation","methanol_oxidation","methylotrophy","animal_parasites_or_symbionts","nitrate_respiration","nitrogen_respiration","Low Abundance")], base = 1)
+
+head(mat_dirichreg_r)
+
+rowSums(mat_t2[,c(5:15)])
+
+full.Diri <- brm(Y ~ group+tissue_explanation+sex+tissue_explanation*group + (1|pedigreeID), data = mat_dirichreg_r, family = dirichlet(refcat ="Low Abundance"),seed = 000)
+
+summary(full.Diri)
+
+z<-summary(full.Diri)
+
+result<-z$fixed
+
+
+p1 <- plot(conditional_effects(full.Diri, categorical = T,points=T),
+           plot = F)
+
+p1
+df2<-p1$`group:cats__`$data
+
+
+colnames(df2)<-c("group","Y","pedigreeID","cond","faprotax","Season",
+                 "faprotax2","estimate","se","lower","upper")
+
+result
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
