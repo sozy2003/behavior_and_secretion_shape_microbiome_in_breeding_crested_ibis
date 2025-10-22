@@ -4,44 +4,46 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+######6A+B_Fit of the neutral community model during the breeding (A) and non-breeding (B) periods.
 # clean enviroment object
 rm(list=ls()) 
-
 library(Hmisc)
 #install.packages("minpack.lm")
-library(minpack.lm)
+library(minpack.lm) # For non-linear least squares regression
 library(stats4)
 library(ggplot2)
+# Read OTU table with first column as row names
 otu_table <-  read.delim("otutab.txt", row.names= 1,  header=T, sep="\t")
 
 # spp<-t(otu_table)
 # all samples---------
-set.seed(0)
+set.seed(0)# Ensure reproducibility of rarefaction
 library(vegan)
-
+# Transpose OTU table, rarefy to minimum sample depth, then transpose back
 spp= as.data.frame(t(rrarefy(t(otu_table), min(colSums(otu_table)))))
 spp[1:6,1:6]
 colSums(spp)
-
+# Transpose again to have samples as rows, ASVs as columns
 spp <- t(spp)
 spp[1:6,1:6]
-
-N <- mean(apply(spp, 1, sum))#每一个样本有多少reads
-p.m <- apply(spp, 2, mean) #每一个ASV在所有样本平均数目(reads)。
-p.m <- p.m[p.m != 0]#选择平均数不为0的ASV
-p <- p.m/N    #丰度？
-spp.bi <- 1*(spp>0) # ASV数目大于0的赋值为1
-freq <- apply(spp.bi, 2, mean)
-freq <- freq[freq != 0]
-C <- merge(p, freq, by=0)
-C <- C[order(C[,2]),]
+# Calculate key ecological metrics
+N <- mean(apply(spp, 1, sum))# Average number of reads per sample
+p.m <- apply(spp, 2, mean) # Mean read count per ASV across samples
+p.m <- p.m[p.m != 0]# Remove ASVs with zero mean abundance
+p <- p.m/N     # Convert to relative abundance
+spp.bi <- 1*(spp>0) # Binary presence-absence matrix (1=present, 0=absent)
+freq <- apply(spp.bi, 2, mean)# Occurrence frequency (fraction of samples where ASV is present)
+freq <- freq[freq != 0] # Remove ASVs never observed
+# Merge and clean data for modeling
+C <- merge(p, freq, by=0) # Merge by ASV identifier (row names)
+C <- C[order(C[,2]),]# Sort by relative abundance
 C <- as.data.frame(C)
-C.0 <- C[!(apply(C, 1, function(y) any(y == 0))),]
+C.0 <- C[!(apply(C, 1, function(y) any(y == 0))),]# Remove rows with zeros
 p <- C.0[,2]
 freq <- C.0[,3]
 names(p) <- C.0[,1]
 names(freq) <- C.0[,1]
-d = 1/N
+d = 1/N# Threshold for presence (1 read in average sample)
 ##Fit model parameter m (or Nm) using Non-linear least squares (NLS)
 m.fit <- nlsLM(freq ~ pbeta(d, N*m*p, N*m*(1 -p), lower.tail=FALSE),start=list(m=0.1))
 m.fit #get the m value
@@ -51,8 +53,8 @@ pred.ci <- binconf(freq.pred*nrow(spp), nrow(spp), alpha=0.05, method="wilson", 
 Rsqr <- 1 - (sum((freq - freq.pred)^2))/(sum((freq - mean(freq))^2))
 Rsqr# get the R2 value
 bacnlsALL <-data.frame(p,freq,freq.pred,pred.ci[,2:3])
+# Classify ASVs relative to neutral model predictions
 inter.col<-rep('netral model',nrow(bacnlsALL))
-
 inter.col[bacnlsALL$freq <= bacnlsALL$Lower]<-'Underrepresented ASVs'   
 inter.col[bacnlsALL$freq >= bacnlsALL$Upper]<-'Overrepresented ASVs '  
 
@@ -68,7 +70,7 @@ main_theme <-  theme(panel.background=element_blank(),
                      legend.key=element_blank(),
                      legend.text= element_text(size=15),
                      text=element_text(family="sans", size=15))
-
+# Add model statistics to plot
 neutral_model <- ggplot(bacnlsALL,aes(x=log10(p), y=freq))+
   geom_point(aes(color=inter.col),alpha=0.5)+
   geom_line(aes(x=log10(p), y=freq.pred), lwd=0.8)+
@@ -90,32 +92,29 @@ neutral_model <- neutral_model+
 neutral_model 
 neutral_model_allsamples <- neutral_model    
 neutral_model_allsamples
-
+# Identify ASV categories based on model
 above.list <- rownames(bacnlsALL)[bacnlsALL$freq >= bacnlsALL$Upper]
 below.list <- rownames(bacnlsALL)[bacnlsALL$freq <= bacnlsALL$Lower]
 middle.list <- rownames(bacnlsALL)[bacnlsALL$freq < bacnlsALL$Upper&bacnlsALL$freq > bacnlsALL$Lower]
-
+# Calculate total abundance for each category per sample
 mat <- otu_table
-
-mat_t <-  t(mat)
-
+mat_t <-  t(mat)# Transpose to samples as columns, ASVs as rows
 mat_t1 <- as.data.frame(t(mat_t))
+# Initialize columns for each category
 mat_t1$above <- rowSums(mat_t1)
 mat_t1$below <- rowSums(mat_t1)
 mat_t1$middle <- rowSums(mat_t1)
-
+# Zero out abundances for ASVs not in each category
 mat_t1$above[!rownames(mat_t1)%in%above.list] <- 0
 mat_t1$below [!rownames(mat_t1)%in%below.list]<- 0
 mat_t1$middle[!rownames(mat_t1)%in%middle.list] <- 0
 
 mat_t1[,c("above", "below", "middle")][1:6,]
-
+# Extract and rename category sums
 all_season <- t(mat_t1[,c("above", "below", "middle")])
-
 name <- "all_season"
 rownames(all_season) <- paste(name,rownames(all_season), sep=".")
 all_season[1:3,1:20]
-
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -125,26 +124,30 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r cars}
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
 #----------------------breeding————————————————————————————————————
 # Public file 1. "design.txt"  Design of experiment
 otu_table <-  read.delim("otutab.txt", row.names= 1,  header=T, sep="\t")
 design = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
-
+# Recode 'tissue' variable into more descriptive group names
 design$group2 <- design$tissue
-
 design$group2[design$tissue=="I"] <- "skin.of.preen.gland"
 design$group2[design$tissue=="f"] <- "neck.feather"
 design$group2[design$tissue=="s"] <- "neck.skin"
 
-
+# Subset metadata to only "breeding" group samples
 design_b<-design[design$group=="breeding",]
+# Filter OTU table to retain only samples in the breeding group
 otu_table <- otu_table[,row.names(design_b)]
 
-
-set.seed(0)
+# Standardize sequencing depth across samples using rarefaction
+set.seed(0)# Ensure reproducibility of random rarefaction
 library(vegan)
-
+# Transpose OTU table (samples=rows), rarefy to minimum sample depth, transpose back
 spp= as.data.frame(t(rrarefy(t(otu_table), min(colSums(otu_table)))))
 spp[1:6,1:6]
 colSums(spp)
@@ -152,14 +155,15 @@ colSums(spp)
 spp <- t(spp)
 spp[1:6,1:6]
 
-
-N <- mean(apply(spp, 1, sum))#每一个样本有多少reads
-p.m <- apply(spp, 2, mean) #每一个ASV在所有样本平均数目(reads)。
-p.m <- p.m[p.m != 0]#选择平均数不为0的ASV
-p <- p.m/N    #丰度？
-spp.bi <- 1*(spp>0) # ASV数目大于0的赋值为1
-freq <- apply(spp.bi, 2, mean)
-freq <- freq[freq != 0]
+# Calculate key parameters for neutral community model
+N <- mean(apply(spp, 1, sum))# Average number of reads per sample
+p.m <- apply(spp, 2, mean)# Mean read count per ASV across samples
+p.m <- p.m[p.m != 0] # Remove ASVs with zero mean abundance
+p <- p.m/N    # Convert to relative abundance
+spp.bi <- 1*(spp>0) # Binary matrix (1=present, 0=absent)
+freq <- apply(spp.bi, 2, mean)# Occurrence frequency (fraction of samples with ASV)
+freq <- freq[freq != 0]# Remove never-observed ASVs
+# Merge and clean data for modeling
 C <- merge(p, freq, by=0)
 C <- C[order(C[,2]),]
 C <- as.data.frame(C)
@@ -173,17 +177,20 @@ d = 1/N
 m.fit <- nlsLM(freq ~ pbeta(d, N*m*p, N*m*(1 -p), lower.tail=FALSE),start=list(m=0.1))
 m.fit #get the m value
 m.ci <- confint(m.fit, 'm', level=0.95)
+# Generate model predictions and confidence intervals
 freq.pred <- pbeta(d, N*coef(m.fit)*p, N*coef(m.fit)*(1 -p), lower.tail=FALSE)
+# Wilson score interval for predicted frequencies
 pred.ci <- binconf(freq.pred*nrow(spp), nrow(spp), alpha=0.05, method="wilson", return.df=TRUE)
+# Calculate R-squared to assess model fit
 Rsqr <- 1 - (sum((freq - freq.pred)^2))/(sum((freq - mean(freq))^2))
 Rsqr# get the R2 value
-
+# Prepare data for visualization
 bacnlsALL <-data.frame(p,freq,freq.pred,pred.ci[,2:3])
-
+# Classify ASVs relative to model predictions
 inter.col<-rep('netral model',nrow(bacnlsALL))
 inter.col[bacnlsALL$freq <= bacnlsALL$Lower]<-'Underrepresented ASVs'   
 inter.col[bacnlsALL$freq >= bacnlsALL$Upper]<-'Overrepresented ASVs '        
-
+# Create neutral model plot using ggplot2
 neutral_model_breeding <- ggplot(bacnlsALL,aes(x=log10(p), y=freq))+
   geom_point(aes(color=inter.col),alpha=0.5)+
   geom_line(aes(x=log10(p), y=freq.pred), lwd=0.8)+
@@ -191,7 +198,7 @@ neutral_model_breeding <- ggplot(bacnlsALL,aes(x=log10(p), y=freq))+
   geom_line(aes(x=log10(p), y=Upper), lwd=0.8,lty=2, color="blue")+
   scale_color_manual(values = c("red","blue", "black"))+main_theme
 
-
+# Add model statistics (R² and Nm) to plot
 neutral_model_breeding <- neutral_model_breeding + annotate("text",x=-5,y=0.85, 
                                                             label= paste("R^2=",round(Rsqr,3)))+
   annotate("text",x=-5,y=0.80, 
@@ -211,28 +218,26 @@ middle.list <- rownames(bacnlsALL)[bacnlsALL$freq < bacnlsALL$Upper&bacnlsALL$fr
 design.sub <- design[design$group=="breeding",]
 #mat <- otu_table[,rownames(design.sub)]
 mat <- otu_table
-
 mat_t <-  t(mat)
-
 mat_t1 <- as.data.frame(t(mat_t))
+# Initialize columns for each category with total read counts
 mat_t1$above <- rowSums(mat_t1)
 mat_t1$below <- rowSums(mat_t1)
 mat_t1$middle <- rowSums(mat_t1)
-
+# Zero out counts for ASVs not in each category
 mat_t1$above[!rownames(mat_t1)%in%above.list] <- 0
 mat_t1$below [!rownames(mat_t1)%in%below.list]<- 0
 mat_t1$middle[!rownames(mat_t1)%in%middle.list] <- 0
-
 mat_t1[,c("above", "below", "middle")][1:6,]
-
+# Extract and format category sums
 breeding <- t(mat_t1[,c("above", "below", "middle")])
-
 name <- "breeding"
 rownames(breeding) <- paste(name,rownames(breeding), sep=".")
-breeding[1:3,1:20]
+breeding[1:3,1:20]# Display subset of results
+
 ggsave(paste("breeding_NCM",".pdf", sep=""), neutral_model_breeding, width =6, height =4 )
 # ggsave(neutral_model_spring, file="neutral_model_spring.pdf",width = 6, height = 4)
-#nonbreeding#######################################################
+#nonbreeding#######################################################The following code is similar.
 
 design = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
 
@@ -1068,14 +1073,12 @@ name <- "neck.feather.nonbreeding"
 rownames(neck.feather.nonbreeding) <- paste(name,rownames(neck.feather.nonbreeding), sep=".")
 neck.feather.nonbreeding[1:3,1:20]
 
-summary(cars)
+plot(pressure)
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
 ```{r}
+########6C_PCoA visualization based on the Bray–Curtis distance for neutral and non-neutral partitions.
 otu.t <- rbind(neck.skin.breeding,
                neck.skin.nonbreeding,
                neck.feather.breeding,neck.feather.nonbreeding,
@@ -1126,7 +1129,7 @@ shape_mapping <- c(
   "skin.of.preen.gland.nonbreeding" = 0    # 空心正方
 )
 
-# 修改 ggplot 代码
+#  ggplot 
 p <- ggplot(points, aes(x = x, y = y, color = partion, shape = tissue)) +
   geom_point(alpha = 1, size = 3.5) +
   labs(
@@ -1145,9 +1148,8 @@ p
 plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
-
 ```{r pressure, echo=FALSE}
+######6D_Proportion of ASVs in above, below, and neutral partitions.
 bar <- data.frame(neck.skin.breeding=c(table(t(neck.skin.breeding) [,1]>0)[2],
                                        table(t(neck.skin.breeding) [,2]>0)[2],
                                        table(t(neck.skin.breeding) [,3]>0)[2]),
@@ -1172,7 +1174,7 @@ rownames(bar) <- c("Above", "Below", "Neutral")
 
 per <-  t(t(bar)/colSums(bar,na=T)) * 100 
 
-#install.packages("reshape2")  # 如果未安装
+#install.packages("reshape2")  
 library(reshape2)
 bar.long <- as.data.frame(melt(per, value.name = "value"))
 colnames(bar.long)[1:2] <- c("partion", "habitat")
