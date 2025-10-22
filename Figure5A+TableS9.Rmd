@@ -5,7 +5,7 @@ output: html_document
 
 ```{r setup, include=FALSE}
 rm(list = ls()) 
-faprtax <- read.table("KK_otu_tax_faprtax.txt", row.names= 1,  header=T, sep="\t")
+faprtax <- read.table("faprotax.txt", row.names= 1,  header=T, sep="\t")
 faprtax <- faprtax[,-1]
 faprtax=faprtax[which(rowSums(faprtax) > 0),]
 metadata = read.table("metadata.txt", header=T, row.names= 1, sep="\t") 
